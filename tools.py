@@ -120,6 +120,18 @@ class DataSolver:
         '''
         return name.encode('utf-8').hex()
     
+    def __hex2player(self, hex_str):
+        '''
+        Convert hex to player name
+
+        Args:
+            hex_str (str): hex of player name
+
+        Returns:
+            str: player name
+        '''
+        return bytes.fromhex(hex_str).decode('utf-8')
+    
     def add_new_player(self, player, joinYear):
         '''
         Add new player
@@ -353,14 +365,97 @@ class DataSolver:
         '''
         return 0.5
     
-    def export_score(self, active_only=True, active_days=180):
+    def __get_score_history(self, id, days):
+        '''
+        Get score history of selected player
+
+        Args:
+            id (str): Player id
+            days (int): Export days
+
+        Returns:
+            list: Score history
+        '''
+        file_path = self.__path_score + id + '.csv'
+        if not os.path.exists(file_path):
+            return []
+        df = pd.read_csv(file_path)
+        score_history = []
+        p_df = -1
+        Rating = 1500.; RatingDeviation = 350.; Volatility = 0.06
+        for date in range(self.__t_today_mjd - days, self.__t_today_mjd + 1):
+            if (p_df <= len(df) - 2):
+                if (date >= df.loc[p_df+1, 't_comp_mjd']):
+                    p_df += 1
+
+            if p_df != -1:
+                Rating = df.loc[p_df, 'Rating']
+                RatingDeviation = df.loc[p_df, 'RatingDeviation']
+                RatingDeviation = min(350., math.sqrt(RatingDeviation**2 + 
+                                self.__c2 * (date - df.loc[p_df, 't_comp_mjd'])))
+                Volatility = df.loc[p_df, 'Volatility']
+            score_history.append([date, Rating, RatingDeviation, Volatility])
+
+        return score_history
+
+    def export_score_history(self, days=90):
+        '''
+        Export selected player history score to excel file
+
+        Args:
+            days (int, optional): Export days. Defaults to 90.
+        '''
+        id_list = []
+        score_history_list = []
+        columns = ['Date_MJD', 'Year', 'Month', 'Day'] # TODO: 写为excel的日期格式
+        for id in self.__player_data:
+            if self.__player_data[id]['LastActive_MJD'] < self.__t_comp_mjd - days:
+                continue
+            id_list.append(id)
+            name = self.__player_data[id]['Name']
+            join_year = self.__player_data[id]['JoinYear']
+            columns.append(name + ' (' + join_year + ')' + 'Rating')
+            columns.append(name + ' (' + join_year + ')' + 'RatingDeviation')
+            columns.append(name + ' (' + join_year + ')' + 'Volatility')
+            score_history_list.append(self.__get_score_history(id, days))
+        n_player = len(id_list)
+        if n_player == 0:
+            print("No player selected.")
+            return
+        
+        # input export file name
+        root = tk.Tk()
+        root.withdraw()
+        file_name = filedialog.asksaveasfilename(
+            initialfile='ScoreHistoryExport-{:04d}{:02d}{:02d}.xlsx'.format(
+                *mjd2ymd(self.__t_comp_mjd)))
+        if file_name == '':
+            print("Export cancelled.")
+            return
+        # export player score
+        df_score = pd.DataFrame(columns=columns)
+        for i in range(days+1):
+            date_mjd = self.__t_comp_mjd + i - days
+            date_ymd = mjd2ymd(date_mjd)
+            row = [date_mjd, *date_ymd] # TODO: 写为excel的日期格式
+            for j in range(n_player):
+                row.append(score_history_list[j][i][1])
+                row.append(score_history_list[j][i][2])
+                row.append(score_history_list[j][i][3])
+            df_score.loc[i] = row
+        
+        # save to excel file
+        df_score.to_excel(file_name, index=False)
+        return 
+    
+    def export_score(self, active_only=True, active_days=90):
         '''
         Export player score to excel file
 
         Args:
             active_only (bool, optional): Export recent active or all players. 
                 Defaults to True.
-            active_days (int, optional): Active judgement days. Defaults to 180.
+            active_days (int, optional): Active judgement days. Defaults to 90.
         '''
         # input export file name
         root = tk.Tk()

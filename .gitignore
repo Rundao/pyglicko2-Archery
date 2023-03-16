@@ -1,3 +1,5 @@
 .DS_Store
 /Data
 __pycache__
+/test.ipynb
+/test.py
